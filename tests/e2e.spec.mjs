@@ -77,13 +77,36 @@ async function runE2E() {
       () => document.getElementById('rev-box-title')?.textContent?.includes('cram')
     );
 
-    // 3. PDF tab renders canvas with non-zero dimensions and painted content
+    // 3. PDF tab renders continuous scroll canvases and fullscreen works
     await page.click('a[href="#/network/storage/pdf"]');
     await page.waitForFunction(() => {
       const status = document.querySelector('[data-pdf="status"]')?.textContent || '';
-      const canvas = document.querySelector('[data-pdf="canvas"]');
-      return status.includes('page 1 /') && canvas && canvas.width > 100 && canvas.height > 100;
-    }, { timeout: 15000 });
+      const canvas = document.querySelector('.pdf-page-slot.is-rendered [data-pdf="canvas"]');
+      return status.includes('1 /') && canvas && canvas.width > 100 && canvas.height > 100;
+    }, undefined, { timeout: 15000 });
+    await page.screenshot({ path: path.join(SCREENSHOTS_DIR, 'pdf-desktop.png'), fullPage: false });
+
+    // Open fullscreen PDF overlay, verify canvas, scroll updates page indicator, Esc closes
+    await page.click('[data-pdf="fullscreen"]');
+    await page.waitForSelector('.pdf-fs-overlay');
+    await page.waitForFunction(() => {
+      const overlay = document.querySelector('.pdf-fs-overlay');
+      const canvas = overlay?.querySelector('.pdf-page-slot.is-rendered [data-pdf="canvas"]');
+      return canvas && canvas.width > 100 && canvas.height > 100;
+    }, undefined, { timeout: 15000 });
+    const initialFsStatus = await page.locator('[data-pdf="fs-status"]').textContent();
+    assert.ok(initialFsStatus?.includes('1 /'), `Expected 1 / N in fullscreen, got ${initialFsStatus}`);
+
+    await page.evaluate(() => {
+      const sc = document.querySelector('[data-pdf="fs-scroll"]');
+      if (sc) sc.scrollTop = Math.floor(sc.scrollHeight * 0.35);
+    });
+    await page.waitForFunction(() => {
+      const text = document.querySelector('[data-pdf="fs-status"]')?.textContent || '';
+      return text.includes(' / ') && !text.startsWith('1 /');
+    }, undefined, { timeout: 5000 });
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('.pdf-fs-overlay', { state: 'detached', timeout: 5000 });
 
     // 4. Drill tab works
     await page.click('a[href="#/network/storage/drill"]');
@@ -94,7 +117,6 @@ async function runE2E() {
     // 5. Quiz tab: 2 deliberate wrong answers -> retry shows exactly 2 -> cleared
     await page.click('a[href="#/network/storage/quiz"]');
     await page.waitForSelector('#btn-start-quiz');
-    // Keep question order predictable so we can look up answers from /data/network/storage.json
     const storageData = await page.evaluate(async () => {
       const r = await fetch('/data/network/storage.json');
       return r.json();
@@ -116,7 +138,6 @@ async function runE2E() {
       const correct = answerById.get(qId);
       assert.ok(correct, `Could not find answer for question id: ${qId}`);
 
-      // Deliberately pick wrong answer on first 2 questions
       const pick = i < 2 ? (correct === 'A' ? 'B' : 'A') : correct;
       await page.click(`button[data-choice="${pick}"]`);
       await page.waitForSelector('#btn-next-q');
@@ -182,39 +203,107 @@ async function runE2E() {
     // --- MOBILE 390x844 & 360x740 ---
     const mobileCtx = await browser.newContext({ viewport: { width: 390, height: 844 } });
     const mobilePage = await mobileCtx.newPage();
+    const mobileErrors = [];
+    mobilePage.on('pageerror', (err) => mobileErrors.push(err.message));
 
     await mobilePage.goto(baseUrl, { waitUntil: 'networkidle' });
     await skipBootIfPresent(mobilePage);
     await mobilePage.waitForSelector('.handout-card');
-    await mobilePage.waitForFunction(
-      () => document.getElementById('hero-ascii')?.textContent?.includes('|____/|____/')
-    );
     await assertNoHorizontalOverflow(mobilePage, 'home 390px');
     await mobilePage.screenshot({ path: path.join(SCREENSHOTS_DIR, 'home-mobile.png'), fullPage: false });
 
+    // Mobile drawer check
+    await mobilePage.click('#btn-menu');
+    await mobilePage.waitForTimeout(220);
+    await assertNoHorizontalOverflow(mobilePage, 'drawer 390px');
+    await mobilePage.screenshot({ path: path.join(SCREENSHOTS_DIR, 'drawer-mobile.png'), fullPage: false });
+    await mobilePage.keyboard.press('Escape');
+    await mobilePage.waitForTimeout(200);
+
+    // Search palette check
+    await mobilePage.click('#btn-search');
+    await mobilePage.waitForSelector('#palette-modal:not([hidden])');
+    await mobilePage.fill('#palette-input', 'EBS');
+    await mobilePage.waitForSelector('.palette-item');
+    await assertNoHorizontalOverflow(mobilePage, 'search 390px');
+    await mobilePage.screenshot({ path: path.join(SCREENSHOTS_DIR, 'search-mobile.png'), fullPage: false });
+    await mobilePage.keyboard.press('Escape');
+
+    // Reviewer tab
     await mobilePage.goto(`${baseUrl}/#/network/storage/reviewer`, { waitUntil: 'networkidle' });
     await mobilePage.waitForSelector('#reviewer-prose table');
     await assertNoHorizontalOverflow(mobilePage, 'reviewer 390px');
     await mobilePage.screenshot({ path: path.join(SCREENSHOTS_DIR, 'reviewer-mobile.png'), fullPage: false });
 
-    await mobilePage.goto(`${baseUrl}/#/network/storage/quiz`, { waitUntil: 'networkidle' });
+    // Mobile segmented tab bar switches tabs
+    await mobilePage.click('.tabbar a[href="#/network/storage/pdf"]');
+    await mobilePage.waitForFunction(() => {
+      const status = document.querySelector('[data-pdf="status"]')?.textContent || '';
+      const canvas = document.querySelector('.pdf-page-slot.is-rendered [data-pdf="canvas"]');
+      return status.includes('1 /') && canvas && canvas.width > 100 && canvas.height > 100;
+    }, undefined, { timeout: 15000 });
+    await assertNoHorizontalOverflow(mobilePage, 'pdf 390px');
+    await mobilePage.screenshot({ path: path.join(SCREENSHOTS_DIR, 'pdf-mobile.png'), fullPage: false });
+
+    // Mobile PDF fullscreen opens, renders canvas, updates page on scroll, closes with Esc
+    await mobilePage.click('[data-pdf="fullscreen"]');
+    await mobilePage.waitForSelector('.pdf-fs-overlay');
+    await mobilePage.waitForFunction(() => {
+      const canvas = document.querySelector('.pdf-fs-overlay .pdf-page-slot.is-rendered [data-pdf="canvas"]');
+      return canvas && canvas.width > 100 && canvas.height > 100;
+    }, undefined, { timeout: 15000 });
+    await mobilePage.screenshot({ path: path.join(SCREENSHOTS_DIR, 'pdf-fullscreen-mobile.png'), fullPage: false });
+    await mobilePage.evaluate(() => {
+      const sc = document.querySelector('[data-pdf="fs-scroll"]');
+      if (sc) sc.scrollTop = Math.floor(sc.scrollHeight * 0.35);
+    });
+    await mobilePage.waitForFunction(() => {
+      const text = document.querySelector('[data-pdf="fs-status"]')?.textContent || '';
+      return text.includes(' / ') && !text.startsWith('1 /');
+    }, undefined, { timeout: 5000 });
+    await mobilePage.keyboard.press('Escape');
+    await mobilePage.waitForSelector('.pdf-fs-overlay', { state: 'detached', timeout: 5000 });
+
+    // Verify last page remembered on reload
+    await mobilePage.waitForTimeout(300);
+    await mobilePage.reload({ waitUntil: 'networkidle' });
+    await skipBootIfPresent(mobilePage);
+    await mobilePage.waitForFunction(() => {
+      const text = document.querySelector('[data-pdf="status"]')?.textContent || '';
+      return text.includes(' / ') && !text.startsWith('1 /');
+    }, undefined, { timeout: 15000 });
+
+    // Switch to Drill via mobile tab bar
+    await mobilePage.click('.tabbar a[href="#/network/storage/drill"]');
+    await mobilePage.waitForSelector('#drill-card');
+    await assertNoHorizontalOverflow(mobilePage, 'drill 390px');
+    await mobilePage.screenshot({ path: path.join(SCREENSHOTS_DIR, 'drill-mobile.png'), fullPage: false });
+
+    // Switch to Quiz via mobile tab bar -> start screen -> answered question -> results
+    await mobilePage.click('.tabbar a[href="#/network/storage/quiz"]');
     await mobilePage.waitForSelector('#btn-start-quiz');
+    await assertNoHorizontalOverflow(mobilePage, 'quiz-start 390px');
+    await mobilePage.screenshot({ path: path.join(SCREENSHOTS_DIR, 'quiz-start-mobile.png'), fullPage: false });
+
+    await mobilePage.click('#toggle-sq');
     await mobilePage.click('#btn-start-quiz');
     await mobilePage.waitForSelector('#quiz-prompt');
-    await mobilePage.waitForTimeout(400);
-    await assertNoHorizontalOverflow(mobilePage, 'quiz 390px');
+    await mobilePage.waitForTimeout(350);
+    await mobilePage.click('button[data-choice="A"]');
+    await mobilePage.waitForSelector('#btn-next-q');
+    await assertNoHorizontalOverflow(mobilePage, 'quiz-answered 390px');
     await mobilePage.screenshot({ path: path.join(SCREENSHOTS_DIR, 'quiz-mobile.png'), fullPage: false });
 
-    // Complete mobile quiz to capture results-mobile.png
     const mobileStorage = await mobilePage.evaluate(async () => {
       const r = await fetch('/data/network/storage.json');
       return r.json();
     });
     const mAns = new Map(mobileStorage.questions.map((q) => [q.id, q.answer]));
-    for (let i = 0; i < mobileStorage.questions.length; i++) {
+    await mobilePage.click('#btn-next-q');
+    for (let i = 1; i < mobileStorage.questions.length; i++) {
       const qId = await mobilePage.locator('#quiz-prompt').getAttribute('data-question-id');
       const correct = mAns.get(qId);
-      const pick = i === 0 ? (correct === 'A' ? 'B' : 'A') : correct;
+      const pick = i === 1 ? (correct === 'A' ? 'B' : 'A') : correct;
       await mobilePage.click(`button[data-choice="${pick}"]`);
       await mobilePage.waitForSelector('#btn-next-q');
       await mobilePage.click('#btn-next-q');
@@ -223,18 +312,84 @@ async function runE2E() {
     await assertNoHorizontalOverflow(mobilePage, 'results 390px');
     await mobilePage.screenshot({ path: path.join(SCREENSHOTS_DIR, 'results-mobile.png'), fullPage: false });
 
-    // Strict 360px overflow check across home, reviewer, and quiz
+    // Weak spots & Settings at 390px
+    await mobilePage.goto(`${baseUrl}/#/weak`, { waitUntil: 'networkidle' });
+    await mobilePage.waitForSelector('#btn-weak-quiz');
+    await assertNoHorizontalOverflow(mobilePage, 'weak-spots 390px');
+    await mobilePage.screenshot({ path: path.join(SCREENSHOTS_DIR, 'weak-mobile.png'), fullPage: false });
+
+    await mobilePage.goto(`${baseUrl}/#/settings`, { waitUntil: 'networkidle' });
+    await mobilePage.waitForSelector('#btn-reset-all');
+    await assertNoHorizontalOverflow(mobilePage, 'settings 390px');
+    await mobilePage.screenshot({ path: path.join(SCREENSHOTS_DIR, 'settings-mobile.png'), fullPage: false });
+
+    // Strict 360x740 overflow check across EVERY view listed
     await mobilePage.setViewportSize({ width: 360, height: 740 });
-    await assertNoHorizontalOverflow(mobilePage, 'quiz 360px');
-    await mobilePage.goto(`${baseUrl}/#/network/storage/reviewer`, { waitUntil: 'networkidle' });
-    await mobilePage.waitForSelector('#reviewer-prose table');
-    await assertNoHorizontalOverflow(mobilePage, 'reviewer 360px');
+
     await mobilePage.goto(`${baseUrl}/#/`, { waitUntil: 'networkidle' });
     await mobilePage.waitForSelector('.handout-card');
     await assertNoHorizontalOverflow(mobilePage, 'home 360px');
 
+    await mobilePage.click('#btn-menu');
+    await mobilePage.waitForTimeout(220);
+    await assertNoHorizontalOverflow(mobilePage, 'drawer 360px');
+    await mobilePage.keyboard.press('Escape');
+    await mobilePage.waitForTimeout(200);
+
+    await mobilePage.click('#btn-search');
+    await mobilePage.waitForSelector('#palette-modal:not([hidden])');
+    await mobilePage.fill('#palette-input', 'EBS');
+    await mobilePage.waitForSelector('.palette-item');
+    await assertNoHorizontalOverflow(mobilePage, 'search 360px');
+    await mobilePage.keyboard.press('Escape');
+
+    await mobilePage.goto(`${baseUrl}/#/network/storage/reviewer`, { waitUntil: 'networkidle' });
+    await mobilePage.waitForSelector('#reviewer-prose table');
+    await assertNoHorizontalOverflow(mobilePage, 'reviewer 360px');
+
+    await mobilePage.goto(`${baseUrl}/#/network/storage/pdf`, { waitUntil: 'networkidle' });
+    await mobilePage.waitForSelector('[data-pdf="canvas"]');
+    await assertNoHorizontalOverflow(mobilePage, 'pdf 360px');
+
+    await mobilePage.goto(`${baseUrl}/#/network/storage/drill`, { waitUntil: 'networkidle' });
+    await mobilePage.waitForSelector('#drill-card');
+    await assertNoHorizontalOverflow(mobilePage, 'drill 360px');
+
+    await mobilePage.goto(`${baseUrl}/#/weak`, { waitUntil: 'networkidle' });
+    await mobilePage.waitForSelector('#btn-weak-quiz');
+    await assertNoHorizontalOverflow(mobilePage, 'weak-spots 360px');
+
+    await mobilePage.goto(`${baseUrl}/#/settings`, { waitUntil: 'networkidle' });
+    await mobilePage.waitForSelector('#btn-reset-all');
+    await assertNoHorizontalOverflow(mobilePage, 'settings 360px');
+
+    await mobilePage.goto(`${baseUrl}/#/network/storage/quiz`, { waitUntil: 'networkidle' });
+    await mobilePage.waitForSelector('#btn-start-quiz');
+    await assertNoHorizontalOverflow(mobilePage, 'quiz-start 360px');
+
+    await mobilePage.click('#toggle-sq');
+    await mobilePage.click('#btn-start-quiz');
+    await mobilePage.waitForSelector('#quiz-prompt');
+    await mobilePage.waitForTimeout(350);
+    await mobilePage.click('button[data-choice="A"]');
+    await mobilePage.waitForSelector('#btn-next-q');
+    await assertNoHorizontalOverflow(mobilePage, 'quiz-answered 360px');
+
+    await mobilePage.click('#btn-next-q');
+    for (let i = 1; i < mobileStorage.questions.length; i++) {
+      const qId = await mobilePage.locator('#quiz-prompt').getAttribute('data-question-id');
+      const correct = mAns.get(qId);
+      const pick = i === 1 ? (correct === 'A' ? 'B' : 'A') : correct;
+      await mobilePage.click(`button[data-choice="${pick}"]`);
+      await mobilePage.waitForSelector('#btn-next-q');
+      await mobilePage.click('#btn-next-q');
+    }
+    await mobilePage.waitForSelector('#btn-retry-missed');
+    await assertNoHorizontalOverflow(mobilePage, 'results 360px');
+
+    assert.deepEqual(mobileErrors, [], `Unexpected mobile page errors: ${mobileErrors.join('; ')}`);
     await mobileCtx.close();
-    console.log('E2E ALL PASSED (desktop 1280 + mobile 390/360 + PDF + quiz retry + search + deep link)');
+    console.log('E2E ALL PASSED (desktop 1280 + mobile 390/360 all 11 views + PDF continuous/fullscreen + quiz retry + search + deep link + offline)');
   } finally {
     await browser.close();
     server.close();
@@ -245,3 +400,6 @@ runE2E().catch((err) => {
   console.error(err);
   process.exit(1);
 });
+
+// Watchdog: a crashed browser can hang cleanup; fail instead of hanging forever.
+setTimeout(() => { console.error('E2E watchdog: timed out after 8 min'); process.exit(1); }, 8 * 60 * 1000).unref();

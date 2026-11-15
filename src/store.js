@@ -6,6 +6,7 @@ const DEFAULT_STATE = () => ({
   wowEnabled: true,
   lastVisited: null,
   handouts: {},
+  pdfPages: {},
 });
 
 const VALID_THEMES = new Set(['dark', 'paper', 'crt', 'amber']);
@@ -37,6 +38,7 @@ export function createStore(storage = defaultStorage()) {
         ...DEFAULT_STATE(),
         ...parsed,
         handouts: parsed?.handouts && typeof parsed.handouts === 'object' ? parsed.handouts : {},
+        pdfPages: parsed?.pdfPages && typeof parsed.pdfPages === 'object' ? parsed.pdfPages : {},
       };
     } catch {
       return clone(memoryState);
@@ -216,6 +218,20 @@ export function createStore(storage = defaultStorage()) {
         }
       }
       return result;
+    },
+
+    getPdfPage(pdfKey) {
+      const page = load().pdfPages?.[pdfKey];
+      return Number.isInteger(page) && page >= 1 ? page : 1;
+    },
+
+    setPdfPage(pdfKey, pageNum) {
+      if (!pdfKey) return 1;
+      const page = Math.max(1, Math.floor(Number(pageNum) || 1));
+      const state = load();
+      state.pdfPages = { ...(state.pdfPages || {}), [pdfKey]: page };
+      save(state);
+      return page;
     },
 
     resetAll() {

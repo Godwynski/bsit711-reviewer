@@ -1,6 +1,13 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { createStore } from '../src/store.js';
+import {
+  clampPage,
+  clampZoom,
+  computeFitScale,
+  computeRenderDpr,
+  computeVisiblePage,
+} from '../src/pdf.js';
 
 function createMemoryStorage() {
   const map = new Map();
@@ -108,5 +115,56 @@ describe('store', () => {
   it('rejects invalid theme values', () => {
     const store = createStore(createMemoryStorage());
     assert.throws(() => store.setTheme('neon-pink'), /Invalid theme/i);
+  });
+
+  it('persists last PDF page per handout and resets cleanly', () => {
+    const storage = createMemoryStorage();
+    const store = createStore(storage);
+
+    assert.equal(store.getPdfPage('network/storage'), 1);
+    assert.equal(store.setPdfPage('network/storage', 4), 4);
+    assert.equal(store.setPdfPage('network/compute', 0), 1);
+
+    const store2 = createStore(storage);
+    assert.equal(store2.getPdfPage('network/storage'), 4);
+
+    store2.resetAll();
+    assert.equal(store2.getPdfPage('network/storage'), 1);
+  });
+});
+
+describe('pdf helpers', () => {
+  it('clampPage bounds pages to [1, totalPages]', () => {
+    assert.equal(clampPage(-3, 8), 1);
+    assert.equal(clampPage(0, 8), 1);
+    assert.equal(clampPage(5, 8), 5);
+    assert.equal(clampPage(99, 8), 8);
+    assert.equal(clampPage('3', 8), 3);
+  });
+
+  it('clampZoom bounds zoom values and rounds cleanly', () => {
+    assert.equal(clampZoom(0.1), 0.5);
+    assert.equal(clampZoom(1.256), 1.26);
+    assert.equal(clampZoom(5), 3.0);
+    assert.equal(clampZoom(Number.NaN), 1);
+  });
+
+  it('computeFitScale fits container width and computeRenderDpr caps DPR', () => {
+    const fit = computeFitScale(390, 612, 20);
+    assert.ok(fit > 0.55 && fit < 0.65, `Expected ~0.60, got ${fit}`);
+    assert.equal(computeRenderDpr(2, 1.5, 4), 3);
+    assert.equal(computeRenderDpr(2, 3, 4), 4);
+  });
+
+  it('computeVisiblePage picks the page overlapping the upper-third viewport focus', () => {
+    const rects = [
+      { page: 1, top: 0, height: 500 },
+      { page: 2, top: 512, height: 500 },
+      { page: 3, top: 1024, height: 500 },
+    ];
+    assert.equal(computeVisiblePage(rects, 0, 700), 1);
+    assert.equal(computeVisiblePage(rects, 450, 700), 2);
+    assert.equal(computeVisiblePage(rects, 980, 700), 3);
+    assert.equal(computeVisiblePage([], 0, 700), 1);
   });
 });

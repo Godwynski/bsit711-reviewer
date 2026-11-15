@@ -215,6 +215,7 @@ export function buildSite(rootDir = ROOT) {
     '/search.js',
     '/store.js',
     '/boot.js',
+    '/text.js',
     '/manifest.json',
     '/search-index.json',
     '/app.webmanifest',

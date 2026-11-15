@@ -1,5 +1,5 @@
 const CACHE_VERSION = '__CACHE_VERSION__';
-const PRECACHE_URLS = __PRECACHE_URLS__;
+const PRECACHE_URLS = [...__PRECACHE_URLS__, '/pdf.js'];
 
 const CDN_PRECACHE = [
   'https://cdnjs.cloudflare.com/ajax/libs/marked/18.2.0/lib/marked.esm.min.js',

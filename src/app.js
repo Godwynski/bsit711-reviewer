@@ -1,5 +1,7 @@
+import { mdInline } from './text.js';
 import { createStore } from './store.js';
 import { parseHash, navigate } from './router.js';
+import { mountPdfViewer } from './pdf.js';
 import {
   createQuizSession,
   submitAnswer,
@@ -75,6 +77,8 @@ function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
   const label = document.getElementById('theme-label');
   if (label) label.textContent = theme;
+  const drawerLabel = document.getElementById('drawer-theme-label');
+  if (drawerLabel) drawerLabel.textContent = theme;
   const metaTheme = document.querySelector('meta[name="theme-color"]');
   if (metaTheme) {
     metaTheme.setAttribute('content', theme === 'paper' ? '#F6F5F1' : '#0B0D10');
@@ -291,28 +295,32 @@ function renderHome(container) {
           return `
             <article class="tui-box handout-card">
               <div class="tui-title">${escHtml(h.handout)}</div>
-              <div class="card-title">${escHtml(h.title)}</div>
-              <div class="card-meta">
-                <span>${h.questionCount} Qs</span>
-                <span>&middot;</span>
-                <span>${h.termCount} terms</span>
+              <div class="card-title-row">
+                <div class="card-title">${escHtml(h.title)}</div>
                 ${
                   missedN > 0
                     ? `<span class="badge badge-warn">missed ${missedN}</span>`
                     : ''
                 }
               </div>
-              <div class="ascii-progress" title="${escHtml(bestLabel)}">${escHtml(bar)}</div>
               <div class="card-meta">
+                <span>${h.questionCount} Qs</span>
+                <span class="mobile-hide">&middot;</span>
+                <span class="mobile-hide">${h.termCount} terms</span>
+              </div>
+              <div class="ascii-progress" title="${escHtml(bestLabel)}">${escHtml(bar)}</div>
+              <div class="card-meta mobile-hide">
                 <span>${escHtml(bestLabel)}</span>
                 <span>&middot;</span>
                 <span>studied: ${escHtml(lastLabel)}</span>
               </div>
               <div class="card-actions">
-                <a class="tui-btn" href="#/${subj.slug}/${h.handout}/reviewer">[Rev]</a>
-                <a class="tui-btn" href="#/${subj.slug}/${h.handout}/pdf">[PDF]</a>
-                <a class="tui-btn tui-btn-primary" href="#/${subj.slug}/${h.handout}/quiz">&gt; Quiz</a>
-                <a class="tui-btn" href="#/${subj.slug}/${h.handout}/drill">[Drill]</a>
+                <a class="tui-btn tui-btn-primary card-primary-btn" href="#/${subj.slug}/${h.handout}/quiz">&gt; Quiz</a>
+                <div class="card-sec-links">
+                  <a class="tui-btn card-sec-link" href="#/${subj.slug}/${h.handout}/reviewer"><span class="desktop-only">[</span>Rev<span class="desktop-only">]</span></a>
+                  <a class="tui-btn card-sec-link" href="#/${subj.slug}/${h.handout}/pdf"><span class="desktop-only">[</span>PDF<span class="desktop-only">]</span></a>
+                  <a class="tui-btn card-sec-link" href="#/${subj.slug}/${h.handout}/drill"><span class="desktop-only">[</span>Drill<span class="desktop-only">]</span></a>
+                </div>
               </div>
             </article>
           `;
@@ -335,7 +343,7 @@ function renderHome(container) {
     .join('');
 
   container.innerHTML = `
-    <section class="tui-box tui-active">
+    <section class="tui-box tui-active hero-box">
       <div class="tui-title">system status</div>
       <h1 class="sr-only">BSIT-711 Pre-Finals Reviewer</h1>
       <pre id="hero-ascii" class="hero-ascii" aria-hidden="true"></pre><div class="hero-logo-sm" aria-hidden="true">[ BSIT-711 ]</div>
@@ -371,133 +379,73 @@ async function loadPdfJs() {
   return pdfjsModule;
 }
 
-async function mountPdfViewer(mountEl, pdfUrl, pdfFile) {
-  mountEl.innerHTML = `
-    <div class="tui-box">
-      <div class="tui-title">pdf viewer</div>
-      <div class="pdf-toolbar">
-        <button type="button" class="tui-btn" data-pdf="prev">&lt; prev</button>
-        <span data-pdf="status" class="card-meta">loading pdf...</span>
-        <button type="button" class="tui-btn" data-pdf="next">next &gt;</button>
-        <button type="button" class="tui-btn" data-pdf="zoom-out">-</button>
-        <button type="button" class="tui-btn" data-pdf="zoom-in">+</button>
-        <button type="button" class="tui-btn" data-pdf="fit">fit width</button>
-        <a class="tui-btn" href="${escHtml(pdfUrl)}" target="_blank" rel="noopener">open tab</a>
-        <a class="tui-btn" href="${escHtml(pdfUrl)}" download="${escHtml(pdfFile)}">download</a>
-      </div>
-      <div class="pdf-canvas-wrap" data-pdf="wrap">
-        <canvas data-pdf="canvas"></canvas>
-      </div>
-    </div>
-  `;
+function decorateCollapsibleSections(proseEl) {
+  const children = Array.from(proseEl.children);
+  if (!children.some((el) => el.tagName === 'H2')) return;
 
-  const statusEl = mountEl.querySelector('[data-pdf="status"]');
-  const wrapEl = mountEl.querySelector('[data-pdf="wrap"]');
-  const canvas = mountEl.querySelector('[data-pdf="canvas"]');
-  const ctx = canvas.getContext('2d');
+  const frag = document.createDocumentFragment();
+  let currentSection = null;
+  let currentBody = null;
+  let sectionIndex = 0;
 
-  let pdfDoc = null;
-  let pageNum = 1;
-  let scale = null;
-  let renderTask = null;
-  let destroyed = false;
+  for (const child of children) {
+    if (child.tagName === 'H2') {
+      currentSection = document.createElement('section');
+      currentSection.className = 'rev-section';
+      const secId = child.id || `sec-${sectionIndex}`;
+      currentSection.dataset.sectionId = secId;
 
-  async function renderPage(num) {
-    if (!pdfDoc || destroyed) return;
-    if (renderTask) {
-      try {
-        renderTask.cancel();
-      } catch {
-        // ignore
-      }
-    }
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'rev-section-toggle';
+      btn.setAttribute('aria-expanded', 'true');
+      btn.innerHTML = `<span class="rev-toggle-icon" aria-hidden="true">-</span>`;
+      child.appendChild(btn);
 
-    const page = await pdfDoc.getPage(num);
-    if (destroyed) return;
+      currentBody = document.createElement('div');
+      currentBody.className = 'rev-section-body';
 
-    const baseViewport = page.getViewport({ scale: 1 });
-    if (scale === null) {
-      const avail = Math.max(280, (wrapEl.clientWidth || 640) - 24);
-      scale = Math.min(2.0, avail / baseViewport.width);
-    }
+      currentSection.appendChild(child);
+      currentSection.appendChild(currentBody);
+      frag.appendChild(currentSection);
 
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const viewport = page.getViewport({ scale });
-    canvas.width = Math.floor(viewport.width * dpr);
-    canvas.height = Math.floor(viewport.height * dpr);
-    canvas.style.width = `${Math.floor(viewport.width)}px`;
-    canvas.style.height = `${Math.floor(viewport.height)}px`;
+      const secRef = currentSection;
+      btn.addEventListener('click', () => {
+        const collapsed = secRef.classList.toggle('collapsed');
+        btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        btn.querySelector('.rev-toggle-icon').textContent = collapsed ? '+' : '-';
+      });
+      child.addEventListener('click', (e) => {
+        if (e.target.closest('button')) return;
+        btn.click();
+      });
 
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    statusEl.textContent = `page ${pageNum} / ${pdfDoc.numPages}`;
-
-    renderTask = page.render({ canvasContext: ctx, viewport });
-    try {
-      await renderTask.promise;
-    } catch (err) {
-      if (err?.name !== 'RenderingCancelledException') throw err;
+      sectionIndex++;
+    } else if (currentBody) {
+      currentBody.appendChild(child);
+    } else {
+      frag.appendChild(child);
     }
   }
 
-  mountEl.querySelector('[data-pdf="prev"]').addEventListener('click', () => {
-    if (!pdfDoc || pageNum <= 1) return;
-    pageNum--;
-    renderPage(pageNum);
-  });
+  proseEl.innerHTML = '';
+  proseEl.appendChild(frag);
 
-  mountEl.querySelector('[data-pdf="next"]').addEventListener('click', () => {
-    if (!pdfDoc || pageNum >= pdfDoc.numPages) return;
-    pageNum++;
-    renderPage(pageNum);
-  });
-
-  mountEl.querySelector('[data-pdf="zoom-in"]').addEventListener('click', () => {
-    if (!pdfDoc) return;
-    scale = Math.min(3.0, (scale || 1) + 0.2);
-    renderPage(pageNum);
-  });
-
-  mountEl.querySelector('[data-pdf="zoom-out"]').addEventListener('click', () => {
-    if (!pdfDoc) return;
-    scale = Math.max(0.4, (scale || 1) - 0.2);
-    renderPage(pageNum);
-  });
-
-  mountEl.querySelector('[data-pdf="fit"]').addEventListener('click', () => {
-    if (!pdfDoc) return;
-    scale = null;
-    renderPage(pageNum);
-  });
-
-  try {
-    const pdfjs = await loadPdfJs();
-    const res = await fetch(pdfUrl);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = new Uint8Array(await res.arrayBuffer());
-    const loadingTask = pdfjs.getDocument({ data });
-    pdfDoc = await loadingTask.promise;
-    if (!destroyed) {
-      await renderPage(1);
-    }
-  } catch (err) {
-    if (!destroyed) {
-      statusEl.textContent = 'pdf render failed — use open tab / download';
-      wrapEl.innerHTML = `<div class="card-meta">Unable to render PDF inline (${escHtml(
-        err?.message || 'offline'
-      )}). Use Open tab or Download above.</div>`;
-    }
-  }
-
-  return () => {
-    destroyed = true;
-    if (renderTask) {
-      try {
-        renderTask.cancel();
-      } catch {
-        // ignore
+  // Collapse long sections after §1 on mobile by default (CSS only hides .collapsed <768px)
+  const sections = proseEl.querySelectorAll('.rev-section');
+  sections.forEach((sec, idx) => {
+    const body = sec.querySelector('.rev-section-body');
+    const textLen = body?.textContent?.length || 0;
+    if (idx > 0 && textLen > 450) {
+      sec.classList.add('collapsed');
+      const btn = sec.querySelector('.rev-section-toggle');
+      if (btn) {
+        btn.setAttribute('aria-expanded', 'false');
+        const icon = btn.querySelector('.rev-toggle-icon');
+        if (icon) icon.textContent = '+';
       }
     }
-  };
+  });
 }
 
 async function renderReviewerTab(panel, data) {
@@ -514,19 +462,14 @@ async function renderReviewerTab(panel, data) {
   setRightRail(tocItems);
 
   const mobileTocHtml = `
-    <details class="mobile-toc tui-box">
-      <summary style="cursor:pointer;font-weight:700;">jump to section (${tocItems.length})</summary>
-      <div class="toc-list" style="margin-top:8px;">
+    <div class="mobile-toc">
+      <select id="mobile-toc-select" class="mobile-toc-select" aria-label="Jump to section">
+        <option value="">jump to section...</option>
         ${tocItems
-          .map(
-            (t) =>
-              `<a href="${escHtml(t.href)}" class="toc-link" data-jump-id="${escHtml(t.id)}">${escHtml(
-                t.label
-              )}</a>`
-          )
+          .map((t) => `<option value="${escHtml(t.id)}">${escHtml(t.label)}</option>`)
           .join('')}
-      </div>
-    </details>
+      </select>
+    </div>
   `;
 
   panel.innerHTML = `
@@ -534,7 +477,7 @@ async function renderReviewerTab(panel, data) {
       <button type="button" id="btn-cram" class="tui-btn">[ cram mode: off ]</button>
       <button type="button" id="btn-answers" class="tui-btn">[ show answers ]</button>
       <button type="button" id="btn-split" class="tui-btn desktop-only">[ split pdf: off ]</button>
-      <a href="#/${data.subject}/${data.handout}/quiz" class="tui-btn tui-btn-primary">&gt; take quiz (${data.questionCount})_</a>
+      <a href="#/${data.subject}/${data.handout}/quiz" class="tui-btn tui-btn-primary desktop-only">&gt; take quiz (${data.questionCount})_</a>
     </div>
     ${mobileTocHtml}
     <div id="split-container" class="split-container">
@@ -554,12 +497,24 @@ async function renderReviewerTab(panel, data) {
   const answerProse = document.getElementById('answer-key-prose');
   const titleEl = document.getElementById('rev-box-title');
 
-  panel.querySelectorAll('[data-jump-id]').forEach((a) => {
-    a.addEventListener('click', (e) => {
-      e.preventDefault();
-      document.getElementById(a.dataset.jumpId)?.scrollIntoView({ behavior: 'smooth' });
-      a.closest('details')?.removeAttribute('open');
-    });
+  document.getElementById('mobile-toc-select')?.addEventListener('change', (e) => {
+    const id = e.target.value;
+    if (!id) return;
+    const target = document.getElementById(id);
+    if (target) {
+      const sec = target.closest('.rev-section');
+      if (sec?.classList.contains('collapsed')) {
+        sec.classList.remove('collapsed');
+        const btn = sec.querySelector('.rev-section-toggle');
+        if (btn) {
+          btn.setAttribute('aria-expanded', 'true');
+          const icon = btn.querySelector('.rev-toggle-icon');
+          if (icon) icon.textContent = '-';
+        }
+      }
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    e.target.value = '';
   });
 
   async function refreshMarkdown() {
@@ -568,6 +523,7 @@ async function renderReviewerTab(panel, data) {
       : data.bodyMarkdown;
     titleEl.textContent = cramMode ? 'cram sheet (§6 + §4)' : 'reviewer';
     proseEl.innerHTML = await renderMarkdownHtml(md);
+    if (!cramMode) decorateCollapsibleSections(proseEl);
 
     if (showAnswers && !cramMode) {
       answerBox.hidden = false;
@@ -599,7 +555,13 @@ async function renderReviewerTab(panel, data) {
 
     if (splitView) {
       setRightRail([]);
-      pdfCleanup = await mountPdfViewer(slot, data.pdfUrl, data.pdfFile);
+      pdfCleanup = await mountPdfViewer(slot, {
+        pdfUrl: data.pdfUrl,
+        pdfFile: data.pdfFile,
+        pdfKey: `${data.subject}/${data.handout}`,
+        store,
+        loadPdfJs,
+      });
     } else {
       if (pdfCleanup) {
         pdfCleanup();
@@ -851,40 +813,49 @@ function renderQuizTab(panel, data, options = {}) {
             ${existingResult ? 'disabled' : ''}
           >
             <span><span class="choice-key">[${letter}]</span> ${escHtml(q.choices[letter])}</span>
-            ${tag ? `<span class="choice-tag">${tag}</span>` : `<span class="card-meta">[${idx + 1}]</span>`}
+            ${tag ? `<span class="choice-tag">${tag}</span>` : `<span class="card-meta desktop-only">[${idx + 1}]</span>`}
           </button>
         `;
       })
       .join('');
 
     panel.innerHTML = `
-      <div class="tui-box tui-active">
+      <div class="tui-box tui-active quiz-question-box">
         <div class="tui-title">${escHtml(statusTitle)}</div>
         <div class="quiz-header-row">
-          <span>round ${session.round} &middot; ${total - session.index} left</span>
-          <span>
-            ${session.mode === 'practice' ? `score ${correctSoFar}/${answeredCount}` : 'exam mode (feedback hidden)'}
+          <span class="quiz-compact-progress">
+            <span>${session.index + 1}/${total}</span>
+            <span class="mobile-hide">&middot; round ${session.round}</span>
+            <span>&middot;</span>
+            <span>${session.mode === 'practice' ? `${correctSoFar}/${answeredCount}` : 'exam'}</span>
             ${timerText ? ` &middot; ${timerText}` : ''}
           </span>
+          <button
+            type="button"
+            id="btn-flag-q"
+            class="tui-btn quiz-flag-btn ${isFlagged ? 'tui-btn-danger' : ''}"
+            aria-label="${isFlagged ? 'Unflag question' : 'Flag question'}"
+            title="Flag question (F)"
+          >
+            <span class="desktop-only">${isFlagged ? '[flagged (F)]' : '[flag (F)]'}</span>
+            <span class="mobile-only" aria-hidden="true">${isFlagged ? '&#x2691;!' : '&#x2691;'}</span>
+          </button>
         </div>
         <div class="ascii-progress">${escHtml(formatAsciiBar(session.index + (existingResult ? 1 : 0), total, 18))}</div>
         <p id="quiz-prompt" class="quiz-prompt" data-question-id="${escHtml(q.id)}"></p>
         <div class="choices-list">${choicesHtml}</div>
         ${
           existingResult
-            ? `<div class="quiz-explanation">${escHtml(existingResult.explanation)}</div>`
+            ? `<div class="quiz-explanation">${mdInline(existingResult.explanation)}</div>`
             : ''
         }
-        <div class="quiz-footer">
-          <button type="button" id="btn-flag-q" class="tui-btn ${isFlagged ? 'tui-btn-danger' : ''}">
-            ${isFlagged ? '[flagged (F)]' : '[flag (F)]'}
-          </button>
+        <div class="quiz-footer ${existingResult ? 'has-next' : ''}">
           ${
             existingResult
-              ? `<button type="button" id="btn-next-q" class="tui-btn tui-btn-primary">
+              ? `<button type="button" id="btn-next-q" class="tui-btn tui-btn-primary quiz-next-btn">
                   &gt; ${session.index + 1 >= total ? 'see results' : 'next'}<span class="cursor-blink">_</span>
                 </button>`
-              : `<span class="card-meta">keys: 1-4 / A-D to answer</span>`
+              : `<span class="card-meta desktop-only">keys: 1-4 / A-D to answer</span>`
           }
         </div>
       </div>
@@ -905,7 +876,11 @@ function renderQuizTab(panel, data, options = {}) {
       const flagged = store.toggleFlag(qHandoutKey, q.id);
       const btn = document.getElementById('btn-flag-q');
       if (btn) {
-        btn.textContent = flagged ? '[flagged (F)]' : '[flag (F)]';
+        btn.innerHTML = `
+          <span class="desktop-only">${flagged ? '[flagged (F)]' : '[flag (F)]'}</span>
+          <span class="mobile-only" aria-hidden="true">${flagged ? '&#x2691;!' : '&#x2691;'}</span>
+        `;
+        btn.setAttribute('aria-label', flagged ? 'Unflag question' : 'Flag question');
         btn.classList.toggle('tui-btn-danger', flagged);
       }
       showToast(flagged ? '[ok] flagged to weak spots' : '[ok] unflagged');
@@ -995,7 +970,7 @@ function renderQuizTab(panel, data, options = {}) {
             <div><strong style="color:var(--ok);">Correct answer:</strong> [${r.correct}] ${escHtml(
               r.choices[r.correct]
             )}</div>
-            <div class="quiz-explanation">${escHtml(r.explanation)}</div>
+            <div class="quiz-explanation">${mdInline(r.explanation)}</div>
           </div>
         </details>
       `
@@ -1117,7 +1092,7 @@ function renderDrillTab(panel, data) {
     const total = session.queue.length;
 
     panel.innerHTML = `
-      <div class="tui-box tui-active">
+      <div class="tui-box tui-active drill-box">
         <div class="tui-title">look-alike drill :: round ${session.round} :: ${session.index + 1}/${total}</div>
         <div class="ascii-progress">${escHtml(formatAsciiBar(session.index, total, 18))}</div>
         <div id="drill-card" class="drill-card" tabindex="0" role="button" aria-label="Flip card">
@@ -1132,15 +1107,15 @@ function renderDrillTab(panel, data) {
               : `
                 <div class="drill-term">${escHtml(card.term)}</div>
                 <div><strong>Key difference:</strong> ${escHtml(card.difference)}</div>
-                ${card.trap ? `<div class="quiz-explanation">Trap: ${escHtml(card.trap)}</div>` : ''}
+                ${card.trap ? `<div class="quiz-explanation">Trap: ${mdInline(card.trap)}</div>` : ''}
               `
           }
         </div>
-        <div class="quiz-footer">
-          <button type="button" id="btn-drill-flip" class="tui-btn">[ flip (Space) ]</button>
-          <div style="display:flex;gap:8px;">
-            <button type="button" id="btn-drill-again" class="tui-btn tui-btn-danger">[ again (2) ]</button>
-            <button type="button" id="btn-drill-gotit" class="tui-btn tui-btn-primary">&gt; got it (1)_</button>
+        <div class="quiz-footer drill-footer">
+          <button type="button" id="btn-drill-flip" class="tui-btn">[ flip<span class="desktop-only"> (Space)</span> ]</button>
+          <div class="drill-grade-btns">
+            <button type="button" id="btn-drill-again" class="tui-btn tui-btn-danger">[ again<span class="desktop-only"> (2)</span> ]</button>
+            <button type="button" id="btn-drill-gotit" class="tui-btn tui-btn-primary">&gt; got it<span class="desktop-only"> (1)</span>_</button>
           </div>
         </div>
       </div>
@@ -1185,10 +1160,10 @@ async function renderHandoutView(container, route) {
   const nextH = idx < manifest.handouts.length - 1 ? manifest.handouts[idx + 1] : null;
 
   const tabs = [
-    { id: 'reviewer', label: 'Reviewer' },
-    { id: 'pdf', label: 'PDF' },
-    { id: 'quiz', label: 'Quiz' },
-    { id: 'drill', label: 'Drill' },
+    { id: 'reviewer', label: 'Reviewer', shortLabel: 'Rev' },
+    { id: 'pdf', label: 'PDF', shortLabel: 'PDF' },
+    { id: 'quiz', label: 'Quiz', shortLabel: 'Quiz' },
+    { id: 'drill', label: 'Drill', shortLabel: 'Drill' },
   ];
 
   const tabsHtml = tabs
@@ -1197,17 +1172,17 @@ async function renderHandoutView(container, route) {
       const label = active ? `[*${t.label}*]` : `[ ${t.label} ]`;
       return `<a href="#/${route.subject}/${route.handout}/${t.id}" class="tab-link ${
         active ? 'active' : ''
-      }">${label}</a>`;
+      }"><span class="tab-desktop">${label}</span><span class="tab-mobile">${t.shortLabel}</span></a>`;
     })
     .join('');
 
   container.innerHTML = `
-    <div style="margin-bottom:8px;">
+    <div class="handout-heading">
       <div class="card-meta">${escHtml(data.subjectTitle)}</div>
       <h1 class="tui-h1">${escHtml(data.handoutTitle)}</h1>
     </div>
     <nav class="tabbar" aria-label="Handout sections">${tabsHtml}</nav>
-    <div id="tab-panel" style="margin-top:16px;"></div>
+    <div id="tab-panel" class="tab-panel"></div>
     <nav class="prev-next-nav" aria-label="Adjacent handouts">
       <div>${
         prevH
@@ -1231,7 +1206,13 @@ async function renderHandoutView(container, route) {
     activeCleanup = await renderReviewerTab(panel, data);
   } else if (route.tab === 'pdf') {
     setRightRail([]);
-    activeCleanup = await mountPdfViewer(panel, data.pdfUrl, data.pdfFile);
+    activeCleanup = await mountPdfViewer(panel, {
+      pdfUrl: data.pdfUrl,
+      pdfFile: data.pdfFile,
+      pdfKey: `${data.subject}/${data.handout}`,
+      store,
+      loadPdfJs,
+    });
   } else if (route.tab === 'quiz') {
     activeCleanup = renderQuizTab(panel, data);
   } else if (route.tab === 'drill') {
@@ -1301,14 +1282,14 @@ async function renderWeakSpotsView(container) {
                 .filter(Boolean)
                 .join(' + ');
               return `
-                <div class="setting-row">
+                <div class="setting-row weak-row">
                   <div style="min-width:0;">
                     <div class="card-meta">[${tags}] Q${q.number}</div>
                     <div>${escHtml(q.prompt)}</div>
                   </div>
                   <button
                     type="button"
-                    class="tui-btn"
+                    class="tui-btn weak-clear-btn"
                     data-clear-key="${escHtml(entry.handoutKey)}"
                     data-clear-id="${escHtml(q.id)}"
                   >
@@ -1365,12 +1346,12 @@ function renderSettingsView(container) {
       <div class="tui-title">settings</div>
       <h1 class="tui-h1">Preferences</h1>
 
-      <div class="setting-row">
+      <div class="setting-row setting-row-stack">
         <div>
           <strong>Theme</strong>
           <div class="card-meta">dark, paper (light), crt (phosphor), amber</div>
         </div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+        <div class="settings-theme-group">
           ${THEMES.map(
             (t) =>
               `<button type="button" class="tui-btn ${
@@ -1595,15 +1576,15 @@ async function init() {
   document.getElementById('sidebar-backdrop')?.addEventListener('click', closeDrawer);
   document.getElementById('btn-search')?.addEventListener('click', () => palette.open());
 
-  document.getElementById('btn-theme')?.addEventListener('click', () => {
+  const cycleTheme = () => {
     const curr = store.getTheme();
     const next = THEMES[(THEMES.indexOf(curr) + 1) % THEMES.length];
     store.setTheme(next);
     applyTheme(next);
     showToast(`[ok] theme: ${next}`);
-  });
+  };
 
-  document.getElementById('btn-share')?.addEventListener('click', async () => {
+  const shareCurrentPage = async () => {
     const url = window.location.href;
     if (navigator.share) {
       try {
@@ -1619,6 +1600,14 @@ async function init() {
     } catch {
       showToast('[ok] copy URL from address bar');
     }
+  };
+
+  document.getElementById('btn-theme')?.addEventListener('click', cycleTheme);
+  document.getElementById('drawer-btn-theme')?.addEventListener('click', cycleTheme);
+  document.getElementById('btn-share')?.addEventListener('click', shareCurrentPage);
+  document.getElementById('drawer-btn-share')?.addEventListener('click', () => {
+    closeDrawer();
+    shareCurrentPage();
   });
 
   bindGlobalShortcuts();
@@ -1630,3 +1619,4 @@ async function init() {
 }
 
 init();
+
