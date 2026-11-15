@@ -1,0 +1,17 @@
+{
+  "name": "bsit711-reviewer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "BSIT-711 Pre-Finals Exam Reviewer — clean terminal TUI PWA",
+  "scripts": {
+    "sync": "node scripts/sync.mjs",
+    "build": "node scripts/build.mjs",
+    "test": "node --test tests/parse.test.mjs tests/quiz.test.mjs tests/store.test.mjs",
+    "e2e": "node tests/e2e.spec.mjs",
+    "serve": "node scripts/serve.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.65.1"
+  }
+}

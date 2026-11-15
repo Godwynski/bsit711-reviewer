@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="theme-color" content="#0B0D10" />
+    <title>BSIT-711 // Pre-Finals Reviewer</title>
+    <meta
+      name="description"
+      content="Clean terminal exam reviewer, PDF viewer, look-alike drill, and retry-missed quiz for BSIT-711 pre-finals."
+    />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="BSIT-711 // Pre-Finals Reviewer" />
+    <meta
+      property="og:description"
+      content="Read reviewers, view handout PDFs, drill look-alike terms, and clear missed quiz questions."
+    />
+    <meta property="og:image" content="/og-image.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link rel="manifest" href="/app.webmanifest" />
+    <link rel="icon" type="image/png" href="/icon-192.png" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;500;700&display=swap"
+    />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+
+    <div id="boot-overlay" class="boot-overlay" hidden aria-hidden="true">
+      <div class="boot-box">
+        <pre id="boot-log" class="boot-log"></pre>
+        <p class="boot-hint">click or press any key to skip</p>
+      </div>
+    </div>
+
+    <header class="topbar">
+      <div class="topbar-left">
+        <button
+          id="btn-menu"
+          class="icon-btn mobile-only"
+          type="button"
+          aria-label="Toggle sidebar menu"
+          aria-expanded="false"
+        >
+          [&equiv;]
+        </button>
+        <a href="#/" class="brand">BSIT-711</a>
+        <span id="breadcrumb" class="breadcrumb">~/</span>
+      </div>
+
+      <div class="topbar-actions">
+        <span id="offline-badge" class="status-pill status-offline" hidden>offline</span>
+        <button
+          id="btn-search"
+          class="icon-btn"
+          type="button"
+          aria-label="Open command palette"
+          title="Search (/ or Ctrl+K)"
+        >
+          <span class="desktop-only">[ / search ]</span>
+          <span class="mobile-only">[&#x1F50D;]</span>
+        </button>
+        <button
+          id="btn-theme"
+          class="icon-btn"
+          type="button"
+          aria-label="Cycle theme"
+          title="Cycle theme (dark, paper, crt, amber)"
+        >
+          [&#x25D0; <span id="theme-label">dark</span>]
+        </button>
+        <button
+          id="btn-share"
+          class="icon-btn desktop-only"
+          type="button"
+          aria-label="Share current page"
+          title="Share link"
+        >
+          [share]
+        </button>
+        <a href="#/settings" class="icon-btn" aria-label="Settings" title="Settings">[cfg]</a>
+        <button
+          id="btn-help"
+          class="icon-btn desktop-only"
+          type="button"
+          aria-label="Keyboard shortcuts"
+          title="Shortcuts (?)"
+        >
+          [?]
+        </button>
+      </div>
+    </header>
+
+    <div id="sidebar-backdrop" class="sidebar-backdrop" hidden></div>
+
+    <div class="shell">
+      <aside id="sidebar" class="sidebar" aria-label="Handouts navigation">
+        <div class="tui-box sidebar-inner">
+          <div class="tui-title">BSIT-711</div>
+          <nav id="sidebar-tree" class="tree"></nav>
+          <div class="sidebar-footer">
+            <a href="#/weak" class="tree-link weak-link" data-route="weak">
+              <span class="tree-branch">&boxur;&boxh;</span> weak spots
+              <span id="sidebar-weak-count" class="badge">0</span>
+            </a>
+            <a href="#/settings" class="tree-link" data-route="settings">
+              <span class="tree-branch">&boxur;&boxh;</span> settings
+            </a>
+          </div>
+        </div>
+      </aside>
+
+      <main id="main-content" class="main" tabindex="-1">
+        <div id="app-view" class="app-view"></div>
+      </main>
+
+      <aside id="right-rail" class="right-rail" aria-label="On this page">
+        <div class="tui-box">
+          <div class="tui-title">index</div>
+          <div id="toc-list" class="toc-list"></div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- Command Palette Modal -->
+    <div id="palette-modal" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="palette-title">
+      <div class="modal-backdrop" data-close-modal="palette"></div>
+      <div class="modal-panel tui-box tui-active">
+        <div id="palette-title" class="tui-title">command palette</div>
+        <div class="palette-input-row">
+          <span class="prompt-glyph">&gt;</span>
+          <input
+            id="palette-input"
+            type="text"
+            class="palette-input"
+            placeholder="search terms, questions, or type: theme crt | go storage quiz | weak"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button id="palette-close" class="icon-btn" type="button">[esc]</button>
+        </div>
+        <ul id="palette-results" class="palette-results" role="listbox"></ul>
+      </div>
+    </div>
+
+    <!-- Keyboard Shortcuts Modal -->
+    <div id="help-modal" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="help-title">
+      <div class="modal-backdrop" data-close-modal="help"></div>
+      <div class="modal-panel tui-box tui-active">
+        <div id="help-title" class="tui-title">keyboard shortcuts</div>
+        <div class="help-grid">
+          <div><kbd>1</kbd>–<kbd>4</kbd> / <kbd>A</kbd>–<kbd>D</kbd></div><div>Select quiz choice</div>
+          <div><kbd>Enter</kbd></div><div>Next question / confirm</div>
+          <div><kbd>F</kbd></div><div>Flag question to Weak spots</div>
+          <div><kbd>R</kbd></div><div>Retry missed questions</div>
+          <div><kbd>Space</kbd></div><div>Flip drill card</div>
+          <div><kbd>/</kbd> or <kbd>Ctrl+K</kbd></div><div>Open command palette</div>
+          <div><kbd>?</kbd></div><div>Toggle this help</div>
+          <div><kbd>Esc</kbd></div><div>Close modal / drawer</div>
+        </div>
+        <div class="modal-actions">
+          <button id="help-close" class="tui-btn tui-btn-primary" type="button">&gt; close_</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast" hidden role="status" aria-live="polite"></div>
+    <div id="sr-live" class="sr-only" aria-live="polite"></div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
