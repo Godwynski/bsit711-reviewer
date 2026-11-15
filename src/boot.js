@@ -119,12 +119,18 @@ export function runBootSequence(manifest, store) {
       overlay.hidden = true;
       overlay.setAttribute('aria-hidden', 'true');
       overlay.removeEventListener('click', cleanup);
-      document.removeEventListener('keydown', cleanup);
+      document.removeEventListener('keydown', onKeySkip, true);
       resolve();
     };
 
+    const onKeySkip = (e) => {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      cleanup();
+    };
+
     overlay.addEventListener('click', cleanup);
-    document.addEventListener('keydown', cleanup, { once: true });
+    document.addEventListener('keydown', onKeySkip, true);
 
     lines.forEach((line, i) => {
       timers.push(
@@ -194,6 +200,13 @@ export function revealTypewriter(el, text, store) {
     return () => {};
   }
 
+  // Reserve final rendered height so choices below don't shift while typing
+  el.textContent = text;
+  const targetHeight = el.offsetHeight;
+  if (targetHeight > 0) {
+    el.style.minHeight = `${targetHeight}px`;
+  }
+
   let idx = 0;
   const stepSize = Math.max(2, Math.ceil(text.length / 18));
   let timer = null;
@@ -204,6 +217,7 @@ export function revealTypewriter(el, text, store) {
     done = true;
     if (timer) clearInterval(timer);
     el.textContent = text;
+    el.style.minHeight = '';
   };
 
   el.textContent = '';

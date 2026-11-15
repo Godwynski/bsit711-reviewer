@@ -14,6 +14,6 @@ Clean terminal TUI web app for BSIT-711 pre-finals review: formatted reviewers, 
 
 - `content/` — Synced source PDFs and reviewer Markdown files.
 - `scripts/` — `sync.mjs`, `parse.mjs`, `build.mjs`, `serve.mjs`.
-- `src/` — Static ES modules (`app.js`, `router.js`, `quiz.js`, `drill.js`, `search.js`, `store.js`, `boot.js`, `style.css`, `sw.js`, `index.html`).
-- `tests/` — Unit tests (`parse.test.mjs`, `quiz.test.mjs`, `store.test.mjs`) and Playwright E2E (`e2e.spec.mjs`).
+- `src/` — Static ES modules (`app.js`, `router.js`, `quiz.js`, `drill.js`, `pdf.js`, `search.js`, `store.js`, `boot.js`, `text.js`, `style.css`, `sw.js`, `index.html`).
+- `tests/` — Unit tests (`parse.test.mjs`, `quiz.test.mjs`, `router.test.mjs`, `store.test.mjs`, `text.test.mjs`) and Playwright E2E (`e2e.spec.mjs`).
 - `vercel.json` — Vercel build (`npm run build`), output (`dist`), `noindex` headers, and long-cache rules.

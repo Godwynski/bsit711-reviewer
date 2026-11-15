@@ -1,6 +1,6 @@
 import { mdInline } from './text.js';
 import { createStore } from './store.js';
-import { parseHash, navigate } from './router.js';
+import { parseHash, navigate, getPageTitle } from './router.js';
 import { mountPdfViewer } from './pdf.js';
 import {
   createQuizSession,
@@ -73,6 +73,13 @@ function announce(msg) {
   if (el) el.textContent = msg;
 }
 
+const THEME_COLORS = {
+  dark: '#0B0D10',
+  paper: '#F6F5F1',
+  crt: '#050B06',
+  amber: '#0E0A04',
+};
+
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
   const label = document.getElementById('theme-label');
@@ -81,7 +88,7 @@ function applyTheme(theme) {
   if (drawerLabel) drawerLabel.textContent = theme;
   const metaTheme = document.querySelector('meta[name="theme-color"]');
   if (metaTheme) {
-    metaTheme.setAttribute('content', theme === 'paper' ? '#F6F5F1' : '#0B0D10');
+    metaTheme.setAttribute('content', THEME_COLORS[theme] || '#0B0D10');
   }
 }
 
@@ -221,9 +228,9 @@ function setRightRail(items) {
   tocList.innerHTML = items
     .map(
       (item) =>
-        `<a href="${escHtml(item.href)}" class="toc-link" data-scroll-id="${escHtml(item.id)}">${escHtml(
+        `<a href="${escHtml(item.href)}" class="toc-link" data-scroll-id="${escHtml(item.id)}" title="${escHtml(
           item.label
-        )}</a>`
+        )}">${escHtml(item.label)}</a>`
     )
     .join('');
 
@@ -673,7 +680,7 @@ function renderQuizTab(panel, data, options = {}) {
     }
         </p>
 
-        <div class="setting-row">
+        <div class="setting-row setting-row-stack">
           <div>
             <strong>Mode</strong>
             <div class="card-meta">Practice = instant feedback. Exam = feedback at end.</div>
@@ -1051,6 +1058,16 @@ function renderQuizTab(panel, data, options = {}) {
 function renderDrillTab(panel, data) {
   setRightRail([]);
   const deck = buildDrillDeck(data.lookAlikes);
+  if (deck.length === 0) {
+    panel.innerHTML = `
+      <div class="tui-box tui-active">
+        <div class="tui-title">look-alike drill</div>
+        <p class="card-meta">No look-alike groups found for this handout.</p>
+        <a href="#/${data.subject}/${data.handout}/quiz" class="tui-btn tui-btn-primary">&gt; take quiz (${data.questionCount})<span class="cursor-blink">_</span></a>
+      </div>
+    `;
+    return () => {};
+  }
   let session = createDrillSession(deck);
 
   function render() {
@@ -1151,6 +1168,7 @@ function renderDrillTab(panel, data) {
 
 async function renderHandoutView(container, route) {
   const data = await getHandoutData(route.subject, route.handout);
+  document.title = getPageTitle(route, data);
   store.setLastVisited({ subject: route.subject, handout: route.handout, tab: route.tab });
 
   const idx = manifest.handouts.findIndex(
@@ -1229,8 +1247,8 @@ async function renderWeakSpotsView(container) {
       <div class="tui-box tui-active">
         <div class="tui-title">weak spots</div>
         <h1 class="tui-h1">No weak spots yet</h1>
-        <p class="card-meta">Questions you miss or flag (F) appear here across all 8 handouts.</p>
-        <a href="#/" class="tui-btn tui-btn-primary">&gt; back to home_</a>
+        <p class="card-meta">Questions you miss or flag (F) appear here across all ${manifest.handoutCount} handouts.</p>
+        <a href="#/" class="tui-btn tui-btn-primary">&gt; [ cd ~ ]<span class="cursor-blink">_</span></a>
       </div>
     `;
     return;
@@ -1259,10 +1277,11 @@ async function renderWeakSpotsView(container) {
 
   if (allWeakQuestions.length === 0) {
     container.innerHTML = `
-      <div class="tui-box">
+      <div class="tui-box tui-active">
         <div class="tui-title">weak spots</div>
-        <p>All weak spots cleared!</p>
-        <a href="#/" class="tui-btn tui-btn-primary">&gt; cd ~_</a>
+        <h1 class="tui-h1">All weak spots cleared!</h1>
+        <p class="card-meta">Nice work. Any questions you miss or flag later will appear here.</p>
+        <a href="#/" class="tui-btn tui-btn-primary">&gt; [ cd ~ ]<span class="cursor-blink">_</span></a>
       </div>
     `;
     return;
@@ -1305,9 +1324,10 @@ async function renderWeakSpotsView(container) {
     )
     .join('');
 
+  const countLabel = `${allWeakQuestions.length} ${allWeakQuestions.length === 1 ? 'item' : 'items'}`;
   container.innerHTML = `
     <div class="tui-box tui-active">
-      <div class="tui-title">weak spots :: ${allWeakQuestions.length} items</div>
+      <div class="tui-title">weak spots :: ${countLabel}</div>
       <h1 class="tui-h1">Weak Spots</h1>
       <p class="card-meta">Questions you missed or flagged across all handouts. Answering them right removes them.</p>
       <button type="button" id="btn-weak-quiz" class="tui-btn tui-btn-primary">
@@ -1381,7 +1401,7 @@ function renderSettingsView(container) {
         </button>
       </div>
 
-      <div class="setting-row">
+      <div class="setting-row setting-row-stack">
         <div>
           <strong>Reset saved progress</strong>
           <div class="card-meta">Clears best scores, missed questions, flags, and preferences</div>
@@ -1444,6 +1464,7 @@ async function handleRoute() {
   closeDrawer();
 
   const route = parseHash(window.location.hash, manifest);
+  document.title = getPageTitle(route);
   setBreadcrumb(route);
   updateSidebar(route);
 
@@ -1465,8 +1486,20 @@ async function handleRoute() {
 
 function bindGlobalShortcuts() {
   const helpModal = document.getElementById('help-modal');
-  const openHelp = () => (helpModal.hidden = false);
-  const closeHelp = () => (helpModal.hidden = true);
+  let helpOpener = null;
+  const openHelp = () => {
+    helpOpener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    helpModal.hidden = false;
+    setTimeout(() => document.getElementById('help-close')?.focus(), 10);
+  };
+  const closeHelp = () => {
+    if (helpModal.hidden) return;
+    helpModal.hidden = true;
+    if (helpOpener && document.contains(helpOpener)) {
+      helpOpener.focus({ preventScroll: true });
+    }
+    helpOpener = null;
+  };
 
   document.getElementById('btn-help')?.addEventListener('click', openHelp);
   document.getElementById('help-close')?.addEventListener('click', closeHelp);

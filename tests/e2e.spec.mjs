@@ -49,15 +49,43 @@ async function runE2E() {
     const page = await context.newPage();
 
     const pageErrors = [];
+    const consoleErrors = [];
+    const consoleWarnings = [];
+    let trackConsole = true;
     page.on('pageerror', (err) => pageErrors.push(err.message));
+    page.on('console', (msg) => {
+      if (!trackConsole) return;
+      if (msg.type() === 'error') consoleErrors.push(msg.text());
+      if (msg.type() === 'warning') consoleWarnings.push(msg.text());
+    });
 
-    // 1. Home loads
+    // 1. Home loads + boot sequence plays once per session and is skippable + PWA basics
     await page.goto(baseUrl, { waitUntil: 'networkidle' });
     await skipBootIfPresent(page);
     await page.waitForSelector('.handout-card');
     await page.waitForFunction(
       () => document.getElementById('hero-ascii')?.textContent?.includes('|____/|____/')
     );
+    assert.equal(await page.title(), 'BSIT-711 // Pre-Finals Reviewer');
+
+    const pwaCheck = await page.evaluate(async () => {
+      const vp = document.querySelector('meta[name="viewport"]')?.getAttribute('content') || '';
+      const tc = document.querySelector('meta[name="theme-color"]')?.getAttribute('content') || '';
+      const ogImg = document.querySelector('meta[property="og:image"]')?.getAttribute('content') || '';
+      const ogRes = ogImg ? await fetch(ogImg) : null;
+      const mfRes = await fetch('/app.webmanifest');
+      const mf = mfRes.ok ? await mfRes.json() : null;
+      const iconOk = mf?.icons?.length
+        ? await Promise.all(mf.icons.map((i) => fetch(i.src).then((r) => r.ok)))
+        : [];
+      return { vp, tc, ogOk: Boolean(ogRes?.ok), mfOk: mfRes.ok, iconOk };
+    });
+    assert.ok(!/user-scalable\s*=\s*no|maximum-scale\s*=\s*1(\.0)?/i.test(pwaCheck.vp), 'Viewport must allow zoom');
+    assert.ok(pwaCheck.tc, 'theme-color meta required');
+    assert.equal(pwaCheck.ogOk, true, 'OG image must exist and load');
+    assert.equal(pwaCheck.mfOk, true, 'app.webmanifest must load');
+    assert.ok(pwaCheck.iconOk.length >= 2 && pwaCheck.iconOk.every(Boolean), 'PWA icons must load');
+
     const cardCount = await page.locator('.handout-card').count();
     assert.equal(cardCount, 8, `Expected 8 handout cards on home, got ${cardCount}`);
     await page.screenshot({ path: path.join(SCREENSHOTS_DIR, 'home-desktop.png'), fullPage: false });
@@ -65,6 +93,7 @@ async function runE2E() {
     // 2. Navigate to a handout & check all tabs
     await page.locator('a[href="#/network/storage/reviewer"]').first().click();
     await page.waitForSelector('#reviewer-prose h2');
+    assert.equal(await page.title(), 'Storage (Reviewer) | BSIT-711');
     // Answer key must be collapsed by default
     assert.equal(await page.locator('#answer-key-box').isHidden(), true);
     await page.screenshot({ path: path.join(SCREENSHOTS_DIR, 'reviewer-desktop.png'), fullPage: false });
@@ -84,6 +113,7 @@ async function runE2E() {
       const canvas = document.querySelector('.pdf-page-slot.is-rendered [data-pdf="canvas"]');
       return status.includes('1 /') && canvas && canvas.width > 100 && canvas.height > 100;
     }, undefined, { timeout: 15000 });
+    assert.equal(await page.title(), 'Storage (PDF) | BSIT-711');
     await page.screenshot({ path: path.join(SCREENSHOTS_DIR, 'pdf-desktop.png'), fullPage: false });
 
     // Open fullscreen PDF overlay, verify canvas, scroll updates page indicator, Esc closes
@@ -96,6 +126,7 @@ async function runE2E() {
     }, undefined, { timeout: 15000 });
     const initialFsStatus = await page.locator('[data-pdf="fs-status"]').textContent();
     assert.ok(initialFsStatus?.includes('1 /'), `Expected 1 / N in fullscreen, got ${initialFsStatus}`);
+    await page.screenshot({ path: path.join(SCREENSHOTS_DIR, 'pdf-fullscreen-desktop.png'), fullPage: false });
 
     await page.evaluate(() => {
       const sc = document.querySelector('[data-pdf="fs-scroll"]');
@@ -111,12 +142,17 @@ async function runE2E() {
     // 4. Drill tab works
     await page.click('a[href="#/network/storage/drill"]');
     await page.waitForSelector('#drill-card');
+    assert.equal(await page.title(), 'Storage (Drill) | BSIT-711');
+    await page.screenshot({ path: path.join(SCREENSHOTS_DIR, 'drill-desktop.png'), fullPage: false });
     await page.click('#drill-card');
     await page.waitForSelector('.drill-term');
 
     // 5. Quiz tab: 2 deliberate wrong answers -> retry shows exactly 2 -> cleared
     await page.click('a[href="#/network/storage/quiz"]');
     await page.waitForSelector('#btn-start-quiz');
+    assert.equal(await page.title(), 'Storage (Quiz) | BSIT-711');
+    await page.screenshot({ path: path.join(SCREENSHOTS_DIR, 'quiz-start-desktop.png'), fullPage: false });
+
     const storageData = await page.evaluate(async () => {
       const r = await fetch('/data/network/storage.json');
       return r.json();
@@ -130,8 +166,6 @@ async function runE2E() {
     await page.waitForSelector('#quiz-prompt');
     await page.waitForTimeout(400);
 
-    await page.screenshot({ path: path.join(SCREENSHOTS_DIR, 'quiz-desktop.png'), fullPage: false });
-
     const totalQs = storageData.questions.length;
     for (let i = 0; i < totalQs; i++) {
       const qId = await page.locator('#quiz-prompt').getAttribute('data-question-id');
@@ -141,6 +175,9 @@ async function runE2E() {
       const pick = i < 2 ? (correct === 'A' ? 'B' : 'A') : correct;
       await page.click(`button[data-choice="${pick}"]`);
       await page.waitForSelector('#btn-next-q');
+      if (i === 0) {
+        await page.screenshot({ path: path.join(SCREENSHOTS_DIR, 'quiz-desktop.png'), fullPage: false });
+      }
       await page.click('#btn-next-q');
     }
 
@@ -164,8 +201,9 @@ async function runE2E() {
 
     // Cleared screen (line-by-line animation)
     await page.waitForFunction(
-      () => document.getElementById('cleared-box')?.textContent?.includes('ROUND CLEARED')
+      () => document.getElementById('cleared-box')?.textContent?.includes('READY FOR PRE-FINALS')
     );
+    await page.screenshot({ path: path.join(SCREENSHOTS_DIR, 'cleared-desktop.png'), fullPage: false });
 
     // 6. Search (command palette) finds a term
     await page.keyboard.press('/');
@@ -177,7 +215,32 @@ async function runE2E() {
       firstResult.toLowerCase().includes('glacier'),
       `Expected search result for Glacier, got: ${firstResult}`
     );
+    await page.screenshot({ path: path.join(SCREENSHOTS_DIR, 'search-desktop.png'), fullPage: false });
     await page.keyboard.press('Escape');
+
+    // Weak spots, Settings, 404, and Paper theme desktop views
+    await page.goto(`${baseUrl}/#/weak`, { waitUntil: 'networkidle' });
+    await page.waitForSelector('.tui-box');
+    assert.equal(await page.title(), 'Weak Spots | BSIT-711');
+    await page.screenshot({ path: path.join(SCREENSHOTS_DIR, 'weak-desktop.png'), fullPage: false });
+
+    await page.goto(`${baseUrl}/#/settings`, { waitUntil: 'networkidle' });
+    await page.waitForSelector('#btn-reset-all');
+    assert.equal(await page.title(), 'Settings | BSIT-711');
+    await page.screenshot({ path: path.join(SCREENSHOTS_DIR, 'settings-desktop.png'), fullPage: false });
+
+    await page.click('[data-set-theme="paper"]');
+    await page.goto(`${baseUrl}/#/`, { waitUntil: 'networkidle' });
+    await page.waitForSelector('.handout-card');
+    await page.screenshot({ path: path.join(SCREENSHOTS_DIR, 'home-paper-desktop.png'), fullPage: false });
+    await page.goto(`${baseUrl}/#/settings`, { waitUntil: 'networkidle' });
+    await page.click('[data-set-theme="dark"]');
+
+    await page.goto(`${baseUrl}/#/404`, { waitUntil: 'networkidle' });
+    await page.waitForSelector('.tui-box');
+    assert.equal(await page.title(), '404 Not Found | BSIT-711');
+    assert.ok((await page.locator('#app-view').textContent()).includes('no such file or directory'));
+    await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '404-desktop.png'), fullPage: false });
 
     // 7. Deep link opens the right tab
     await page.goto(`${baseUrl}/#/graphics/scene-graph/quiz`, { waitUntil: 'networkidle' });
@@ -186,6 +249,10 @@ async function runE2E() {
     assert.ok(activeTab.includes('Quiz'), `Expected active Quiz tab on deep link, got: ${activeTab}`);
 
     // 8. Offline PWA reload works after service worker activates
+    assert.deepEqual(consoleErrors, [], `Unexpected console errors: ${consoleErrors.join('; ')}`);
+    assert.deepEqual(consoleWarnings, [], `Unexpected console warnings: ${consoleWarnings.join('; ')}`);
+    trackConsole = false;
+
     await page.evaluate(async () => {
       if ('serviceWorker' in navigator) {
         await navigator.serviceWorker.ready;
@@ -204,7 +271,13 @@ async function runE2E() {
     const mobileCtx = await browser.newContext({ viewport: { width: 390, height: 844 } });
     const mobilePage = await mobileCtx.newPage();
     const mobileErrors = [];
+    const mobileConsoleErrors = [];
+    const mobileConsoleWarnings = [];
     mobilePage.on('pageerror', (err) => mobileErrors.push(err.message));
+    mobilePage.on('console', (msg) => {
+      if (msg.type() === 'error') mobileConsoleErrors.push(msg.text());
+      if (msg.type() === 'warning') mobileConsoleWarnings.push(msg.text());
+    });
 
     await mobilePage.goto(baseUrl, { waitUntil: 'networkidle' });
     await skipBootIfPresent(mobilePage);
@@ -312,7 +385,7 @@ async function runE2E() {
     await assertNoHorizontalOverflow(mobilePage, 'results 390px');
     await mobilePage.screenshot({ path: path.join(SCREENSHOTS_DIR, 'results-mobile.png'), fullPage: false });
 
-    // Weak spots & Settings at 390px
+    // Weak spots, Settings, 404, Paper theme at 390px
     await mobilePage.goto(`${baseUrl}/#/weak`, { waitUntil: 'networkidle' });
     await mobilePage.waitForSelector('#btn-weak-quiz');
     await assertNoHorizontalOverflow(mobilePage, 'weak-spots 390px');
@@ -322,6 +395,18 @@ async function runE2E() {
     await mobilePage.waitForSelector('#btn-reset-all');
     await assertNoHorizontalOverflow(mobilePage, 'settings 390px');
     await mobilePage.screenshot({ path: path.join(SCREENSHOTS_DIR, 'settings-mobile.png'), fullPage: false });
+
+    await mobilePage.click('[data-set-theme="paper"]');
+    await mobilePage.goto(`${baseUrl}/#/`, { waitUntil: 'networkidle' });
+    await mobilePage.waitForSelector('.handout-card');
+    await mobilePage.screenshot({ path: path.join(SCREENSHOTS_DIR, 'home-paper-mobile.png'), fullPage: false });
+    await mobilePage.goto(`${baseUrl}/#/settings`, { waitUntil: 'networkidle' });
+    await mobilePage.click('[data-set-theme="dark"]');
+
+    await mobilePage.goto(`${baseUrl}/#/404`, { waitUntil: 'networkidle' });
+    await mobilePage.waitForSelector('.tui-box');
+    await assertNoHorizontalOverflow(mobilePage, '404 390px');
+    await mobilePage.screenshot({ path: path.join(SCREENSHOTS_DIR, '404-mobile.png'), fullPage: false });
 
     // Strict 360x740 overflow check across EVERY view listed
     await mobilePage.setViewportSize({ width: 360, height: 740 });
@@ -363,6 +448,10 @@ async function runE2E() {
     await mobilePage.waitForSelector('#btn-reset-all');
     await assertNoHorizontalOverflow(mobilePage, 'settings 360px');
 
+    await mobilePage.goto(`${baseUrl}/#/404`, { waitUntil: 'networkidle' });
+    await mobilePage.waitForSelector('.tui-box');
+    await assertNoHorizontalOverflow(mobilePage, '404 360px');
+
     await mobilePage.goto(`${baseUrl}/#/network/storage/quiz`, { waitUntil: 'networkidle' });
     await mobilePage.waitForSelector('#btn-start-quiz');
     await assertNoHorizontalOverflow(mobilePage, 'quiz-start 360px');
@@ -388,8 +477,10 @@ async function runE2E() {
     await assertNoHorizontalOverflow(mobilePage, 'results 360px');
 
     assert.deepEqual(mobileErrors, [], `Unexpected mobile page errors: ${mobileErrors.join('; ')}`);
+    assert.deepEqual(mobileConsoleErrors, [], `Unexpected mobile console errors: ${mobileConsoleErrors.join('; ')}`);
+    assert.deepEqual(mobileConsoleWarnings, [], `Unexpected mobile console warnings: ${mobileConsoleWarnings.join('; ')}`);
     await mobileCtx.close();
-    console.log('E2E ALL PASSED (desktop 1280 + mobile 390/360 all 11 views + PDF continuous/fullscreen + quiz retry + search + deep link + offline)');
+    console.log('E2E ALL PASSED (desktop 1280 + mobile 390/360 all views + PDF continuous/fullscreen + quiz retry + search + deep link + PWA/titles/404 + offline)');
   } finally {
     await browser.close();
     server.close();

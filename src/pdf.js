@@ -393,6 +393,7 @@ export async function mountPdfViewer(mountEl, { pdfUrl, pdfFile, pdfKey, store, 
       scrollToPage(wrapEl, inlineState.slots, currentPage, 'auto');
       renderInlineNeighbors(currentPage);
     }
+    mountEl.querySelector('[data-pdf="fullscreen"]')?.focus({ preventScroll: true });
   }
 
   function openFullscreen() {
@@ -662,7 +663,10 @@ export async function mountPdfViewer(mountEl, { pdfUrl, pdfFile, pdfKey, store, 
     const res = await fetch(pdfUrl);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = new Uint8Array(await res.arrayBuffer());
-    const loadingTask = pdfjs.getDocument({ data });
+    const loadingTask = pdfjs.getDocument({
+      data,
+      verbosity: pdfjs.VerbosityLevel?.ERRORS ?? 0,
+    });
     pdfDoc = await loadingTask.promise;
     if (destroyed) return () => {};
 

@@ -144,6 +144,7 @@ export function createPaletteController({ manifest, onTheme, onNavigate }) {
 
   let items = [];
   let activeIdx = 0;
+  let lastFocused = null;
 
   function renderResults() {
     resultsEl.innerHTML = '';
@@ -188,7 +189,7 @@ export function createPaletteController({ manifest, onTheme, onNavigate }) {
 
   function activateItem(item) {
     if (!item) return;
-    close();
+    close({ restoreFocus: false });
     if (item.action) {
       if (item.action.type === 'theme') {
         onTheme(item.action.theme);
@@ -209,14 +210,20 @@ export function createPaletteController({ manifest, onTheme, onNavigate }) {
   }
 
   function open() {
+    lastFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     modal.hidden = false;
     input.value = '';
     refresh();
     setTimeout(() => input.focus(), 10);
   }
 
-  function close() {
+  function close({ restoreFocus = true } = {}) {
+    if (modal.hidden) return;
     modal.hidden = true;
+    if (restoreFocus && lastFocused && document.contains(lastFocused)) {
+      lastFocused.focus({ preventScroll: true });
+    }
+    lastFocused = null;
   }
 
   input.addEventListener('input', refresh);

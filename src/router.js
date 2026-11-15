@@ -40,3 +40,23 @@ export function navigate(routeHash) {
     globalThis.location.hash = routeHash.startsWith('#') ? routeHash : `#${routeHash}`;
   }
 }
+
+const TAB_TITLES = {
+  reviewer: 'Reviewer',
+  pdf: 'PDF',
+  quiz: 'Quiz',
+  drill: 'Drill',
+};
+
+export function getPageTitle(route, handoutData = null) {
+  const base = 'BSIT-711 // Pre-Finals Reviewer';
+  if (!route || route.view === 'home') return base;
+  if (route.view === 'weak') return 'Weak Spots | BSIT-711';
+  if (route.view === 'settings') return 'Settings | BSIT-711';
+  if (route.view === 'handout') {
+    const title = handoutData?.handoutTitle || route.handout;
+    const tabLabel = TAB_TITLES[route.tab] || route.tab;
+    return `${title} (${tabLabel}) | BSIT-711`;
+  }
+  return '404 Not Found | BSIT-711';
+}

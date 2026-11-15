@@ -1,5 +1,11 @@
 const CACHE_VERSION = '__CACHE_VERSION__';
-const PRECACHE_URLS = [...__PRECACHE_URLS__, '/pdf.js'];
+const PRECACHE_URLS = [
+  ...__PRECACHE_URLS__,
+  '/pdf.js',
+  '/icon-192.png',
+  '/icon-512.png',
+  '/og-image.png',
+];
 
 const CDN_PRECACHE = [
   'https://cdnjs.cloudflare.com/ajax/libs/marked/18.2.0/lib/marked.esm.min.js',
@@ -40,6 +46,13 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+function safeCachePut(key, response) {
+  return caches.has(CACHE_VERSION).then((exists) => {
+    if (!exists) return undefined;
+    return caches.open(CACHE_VERSION).then((c) => c.put(key, response));
+  });
+}
+
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;
@@ -53,14 +66,14 @@ self.addEventListener('fetch', (event) => {
 
   if (!isSameOrigin && !isCdn) return;
 
-  // Navigation / index.html: cache-first fallback to network, or network-first with cache fallback
+  // Navigation / index.html: network-first with cache fallback
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)
         .then((res) => {
           if (res && res.ok) {
             const copy = res.clone();
-            caches.open(CACHE_VERSION).then((c) => c.put('/index.html', copy));
+            event.waitUntil(safeCachePut('/index.html', copy));
           }
           return res;
         })
@@ -76,7 +89,7 @@ self.addEventListener('fetch', (event) => {
       return fetch(request).then((res) => {
         if (res && (res.ok || res.type === 'opaque')) {
           const copy = res.clone();
-          caches.open(CACHE_VERSION).then((c) => c.put(request, copy));
+          event.waitUntil(safeCachePut(request, copy));
         }
         return res;
       });

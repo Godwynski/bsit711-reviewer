@@ -264,7 +264,7 @@ a:focus-visible {
   position: relative;
   background: var(--panel);
   border: 1px solid var(--line);
-  padding: var(--sp-2);
+  padding: 20px var(--sp-2) var(--sp-2);
   margin-top: 8px;
 }
 
@@ -293,14 +293,14 @@ a:focus-visible {
 .tree {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 0.88rem;
+  gap: 2px;
+  font-size: 0.86rem;
 }
 
 .tree-subject {
   color: var(--dim);
   font-weight: 700;
-  margin-top: 8px;
+  margin-top: 6px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -310,10 +310,16 @@ a:focus-visible {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 8px;
-  min-height: 44px;
+  padding: 4px 8px;
+  min-height: 34px;
   color: var(--text);
   border-left: 2px solid transparent;
+}
+
+.tree-link:focus-visible,
+.tab-link:focus-visible,
+.toc-link:focus-visible {
+  outline-offset: -2px;
 }
 
 .tree-link:hover {
@@ -397,6 +403,7 @@ a:focus-visible {
   color: var(--accent);
   font-size: clamp(0.4rem, 2.3vw, 0.9rem);
   line-height: 1.25;
+  min-height: 6.25em;
   font-variant-ligatures: none;
   overflow: hidden;
   white-space: pre;
@@ -414,6 +421,14 @@ a:focus-visible {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-1);
+}
+
+.continue-bar .tui-btn,
+.prev-next-nav .tui-btn {
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
+  line-height: 1.35;
 }
 
 /* Subject & Cards Grid */
@@ -712,6 +727,7 @@ body.reading-font .prose {
 .table-wrap table {
   width: 100%;
   border-collapse: collapse;
+  border-style: hidden;
   font-size: 0.88rem;
   overflow-wrap: normal;
   word-break: normal;
@@ -744,7 +760,7 @@ body.reading-font .prose {
 
 .toc-link {
   color: var(--dim);
-  padding: 4px 0;
+  padding: 4px;
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -893,14 +909,10 @@ body.pdf-fs-lock {
   align-items: center;
   gap: 10px;
   padding: 4px 6px 4px 14px;
-  background: rgba(11, 13, 16, 0.9);
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
   border: 1px solid var(--line);
   backdrop-filter: blur(8px);
   transition: opacity 0.2s ease, transform 0.2s ease;
-}
-
-[data-theme='paper'] .pdf-fs-controls {
-  background: rgba(246, 245, 241, 0.94);
 }
 
 .pdf-fs-controls.is-hidden {
@@ -984,9 +996,10 @@ body.pdf-fs-lock {
   min-height: 48px;
   cursor: pointer;
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: var(--sp-1);
+  gap: 6px var(--sp-1);
   overflow-wrap: anywhere;
 }
 
@@ -1012,6 +1025,7 @@ body.pdf-fs-lock {
 
 .choice-tag {
   flex-shrink: 0;
+  margin-left: auto;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -1051,8 +1065,8 @@ body.pdf-fs-lock {
 
 .results-ascii {
   color: var(--accent);
-  font-size: 0.82rem;
-  line-height: 1.2;
+  font-size: clamp(0.66rem, 2.15vw, 0.84rem);
+  line-height: 1.25;
   white-space: pre;
   overflow-x: auto;
   max-width: 100%;
@@ -1140,6 +1154,10 @@ body.pdf-fs-lock {
   gap: var(--sp-1);
   border-bottom: 1px solid var(--line);
   padding-bottom: var(--sp-1);
+}
+
+.palette-input-row:focus-within {
+  border-bottom-color: var(--accent);
 }
 
 .prompt-glyph {
@@ -1295,6 +1313,12 @@ kbd {
   border-bottom: 1px solid var(--line);
 }
 
+.tui-box > .setting-row:last-child,
+.choices-list > .weak-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
 .settings-theme-group {
   display: flex;
   flex-wrap: wrap;
@@ -1375,6 +1399,7 @@ kbd {
     width: 276px;
     max-width: 85vw;
     max-height: none;
+    overscroll-behavior: contain;
     background: var(--bg);
     padding: 8px 16px 24px;
     z-index: 80;
@@ -1393,6 +1418,10 @@ kbd {
   }
   .sidebar-inner .tree {
     gap: 0;
+  }
+  .sidebar-inner .tree-link {
+    min-height: 44px;
+    padding: 6px 8px;
   }
   .sidebar-inner .tree-subject {
     margin-top: 4px;
